@@ -8,7 +8,20 @@ import yfinance as yf
 st.set_page_config(page_title="QLD 전략 대시보드", page_icon="📈", layout="wide")
 st.markdown("""<style>
 .block-container {padding-top: 1.7rem; max-width: 1250px}
-div[data-testid="stMetric"] {background: #162238; border: 1px solid #2b3951; padding: 18px; border-radius: 14px}
+div[data-testid="stMetric"] {
+    background: #162238;
+    border: 1px solid #2b3951;
+    padding: 18px;
+    border-radius: 14px;
+    color: #FFFFFF;
+}
+div[data-testid="stMetric"] label,
+div[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+    color: #CBD5E1 !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #FFFFFF !important;
+}
 .sub {color: #94a3b8; font-size: 0.91rem}
 </style>""", unsafe_allow_html=True)
 
