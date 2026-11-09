@@ -103,7 +103,7 @@ def run_variant(df, preset, fee, cash_annual, cutoff):
             "signal_date": closes[-1][0], "events": events, "turnover": turnover,
             "period_start": first, "period_end": last}
 
-st.title("📈 QLD 이동평균선 1·2·3호 통합 비교")
+st.title("📈 QLD 1·2·3호 전략별 탭")
 st.caption("아프나이델 QLD 전략 3종 동시 계산 · 마지막 완료 주 신호 · 연도별 수익률 · 동일 기간 비교")
 with st.sidebar:
     st.header("공통 분석 설정")
@@ -132,17 +132,56 @@ try:
     cutoff = min(today, latest + pd.Timedelta(days=7))
     result = {name: run_variant(d, config, fee_pct / 100, cash_pct / 100, cutoff) for name, config in PRESETS.items()}
     st.info(f"마지막 수집된 QLD 일봉: **{latest:%Y-%m-%d}**. 일봉 잠정 신호와 마지막 완료 주 신호는 다를 수 있습니다.")
-    st.subheader("1·2·3호 신호 및 성과")
-    cards = st.columns(3)
-    for col, (name, r) in zip(cards, result.items()):
-        with col:
-            st.markdown(f"#### {name}")
-            st.metric("완료 주 기준 QLD 목표 비중", f"{r['confirmed']:.0%}")
-            st.caption(f"기준일: {r['signal_date']:%Y-%m-%d} · 최신 잠정 비중: {r['current']:.0%}")
-            st.write(f"**배열:** `{' > '.join(r['confirmed_state'])}`")
-            st.metric("CAGR", f"{r['CAGR']:.2%}")
-            st.metric("MDD (일별 종가)", f"{r['MDD']:.2%}")
-            st.caption(f"{capital * r['confirmed']:,.0f}원 QLD / {capital * (1-r['confirmed']):,.0f}원 현금")
+    st.subheader("전략별 상세 보기")
+    names = list(result)
+    tab1, tab2, tab3, tab_compare = st.tabs(["① QLD 1호", "② QLD 2호", "③ QLD 3호", "📊 전체 비교"])
+    for tab, name in zip([tab1, tab2, tab3], names):
+        r = result[name]
+        with tab:
+            st.markdown(f"### {name}")
+            st.caption("이 탭은 선택한 전략만 표시합니다. 전략 선택을 매주 바꾸면 원래의 기계적 매매 규칙이 달라집니다.")
+            a, b, c = st.columns(3)
+            a.metric("지난 완료 주 QLD 목표 비중", f"{r['confirmed']:.0%}")
+            b.metric("현금 목표 비중", f"{1-r['confirmed']:.0%}")
+            c.metric("최신 일봉 잠정 비중", f"{r['current']:.0%}")
+            st.info(f"확정 신호 기준일: {r['signal_date']:%Y-%m-%d} | 이동평균선 배열: {' > '.join(r['confirmed_state'])}")
+            st.write(f"총 운용금 {capital:,.0f}원 기준: **QLD {capital*r['confirmed']:,.0f}원 / 현금 {capital*(1-r['confirmed']):,.0f}원**")
+            a,b,c=st.columns(3)
+            a.metric("전체 기간 CAGR", f"{r['CAGR']:.2%}")
+            b.metric("전체 기간 MDD (일별 종가)", f"{r['MDD']:.2%}")
+            c.metric("매매 발생 횟수", f"{r['events']:,}회")
+            st.markdown("#### 올해 성과 (YTD)")
+            curve = r["curve"]
+            year = curve.index[-1].year
+            # Prior-year last close anchors YTD; do not mistake a partial year for annual CAGR.
+            before_year = curve[curve.index.year < year]
+            if len(before_year):
+                prior = before_year.iloc[-1]["strategy"]
+                current_year = curve[curve.index.year == year]
+                ytd = current_year.strategy.iloc[-1] / prior - 1
+                ytd_curve = pd.concat([pd.Series([prior], index=[before_year.index[-1]]), current_year.strategy])
+                ytd_mdd = float((ytd_curve / ytd_curve.cummax() - 1).min())
+                y1,y2 = st.columns(2)
+                y1.metric(f"{year}년 누적 수익률 (YTD)", f"{ytd:.2%}")
+                y2.metric(f"{year}년 구간 MDD (일별 종가)", f"{ytd_mdd:.2%}")
+                st.caption(f"기준: 전년도 마지막 거래일 ~ {curve.index[-1]:%Y-%m-%d}. 올해 수익률은 연환산 CAGR이 아닌 누적 YTD입니다.")
+            else:
+                st.caption("작년 마지막 거래일 데이터가 없어 올해 YTD를 계산할 수 없습니다.")
+            st.caption("주의: 금요일 신호를 같은 금요일 종가에 체결했다고 가정한 모의 성과입니다. 실제 월요일 매매 결과와 다릅니다.")
+            fig_one = go.Figure()
+            fig_one.add_trace(go.Scatter(x=curve.index, y=curve.strategy * capital, name=name))
+            fig_one.add_trace(go.Scatter(x=curve.index, y=curve.buyhold * capital, name="QLD 장기보유", line=dict(dash="dash")))
+            fig_one.update_layout(height=350, hovermode="x unified", yaxis_title="평가액 (원)", margin=dict(l=10,r=10,t=20,b=20))
+            st.plotly_chart(fig_one, use_container_width=True, key=f"plot_{name}")
+            config = PRESETS[name]
+            states = [" > ".join(config["periods"][i] for i in ix) for ix in ORDER]
+            with st.expander("이 전략의 6가지 매매 비중 보기"):
+                st.dataframe(pd.DataFrame({"이동평균선 배열": states, "QLD 목표 비중 (%)": config["alloc"]}), hide_index=True)
+    with tab_compare:
+        st.markdown("### QLD 1·2·3호 한눈에 비교")
+        st.caption("연구·검증용 비교표입니다. 실전에서는 미리 정한 한 전략만 지속 운영하는 것을 권장합니다.")
+        overview = pd.DataFrame([{"전략":name, "완료 주 목표":f"{r['confirmed']:.0%}", "CAGR":f"{r['CAGR']:.2%}", "MDD":f"{r['MDD']:.2%}"} for name,r in result.items()])
+        st.dataframe(overview, hide_index=True, use_container_width=True)
     st.divider()
     st.subheader("동일 기간 자산 성장 비교")
     fig = go.Figure()
